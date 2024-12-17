@@ -14,6 +14,15 @@ Or specify a target directory:
 python combine_files.py /path/to/directory
 ```
 
+To write output to a file instead of stdout:
+```bash
+python combine_files.py -o output.txt
+```
+
+Or combine both:
+```bash
+python combine_files.py /path/to/directory -o output.txt
+```
 
 2. The script will display a numbered list of Git-tracked items in the specified directory:
    ```
@@ -46,4 +55,7 @@ python combine_files.py /path/to/directory
 
 The default recursion depth is 3.
 
-To capture this output to a text file, use piping or equivalent of your favorite shell.
+If no output file is specified, the content will be printed to stdout. To capture this output to a text file, you can use the `-o` option:
+```
+python combine_files.py -o output.txt
+```
