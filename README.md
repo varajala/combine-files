@@ -6,12 +6,12 @@ Useful for picking the relevant files to the LLM of your choice.
 
 1. Run the script in the current directory:
 ```bash
-./git_file_combiner.py
+python combine_files.py
 ```
 
 Or specify a target directory:
 ```bash
-./git_file_combiner.py /path/to/directory
+python combine_files.py /path/to/directory
 ```
 
 
