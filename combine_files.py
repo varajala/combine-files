@@ -3,7 +3,7 @@ import sys
 import subprocess
 import argparse
 from pathlib import Path
-from typing import List, Optional, Tuple, TextIO
+from typing import List, Optional, Tuple
 
 
 # Configuration
@@ -25,7 +25,6 @@ MSG_EMPTY_INPUT = "Please enter some numbers or press Ctrl+C to exit."
 MSG_INVALID_NUMBER = "Invalid number: {}"
 MSG_OPERATION_CANCELLED = f"{os.linesep}Operation cancelled."
 MSG_FILE_READ_ERROR = "Error reading file: {}"
-MSG_OUTPUT_FILE_ERROR = "Error writing to output file: {}"
 
 
 def get_git_root() -> Path:
@@ -103,47 +102,78 @@ def get_file_content(file_path: Path, git_root: Path) -> Optional[str]:
     return None
 
 
-def write_output(content: str, file: TextIO) -> None:
-    try:
-        file.write(content)
-    except Exception as e:
-        print(MSG_OUTPUT_FILE_ERROR.format(str(e)))
-        sys.exit(1)
+def process_files(target_dir: Path, all_files: List[str], git_root: Path) -> str:
+    output = []
+    for file in all_files:
+        output.append(f"{os.linesep}{FILE_BEGIN_MARKER.format(file)}")
+        content = get_file_content(file, git_root)
+        if content is not None:
+            output.append(content)
+        output.append(f"{FILE_END_MARKER}{os.linesep}{os.linesep}")
+    return "\n".join(output)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Combine content from multiple Git-tracked files.")
-    parser.add_argument("directory", nargs="?", default=os.getcwd(), help="Target directory (default: current directory)")
-    parser.add_argument("-o", "--output", type=str, help="Output file path")
+def get_all_files(selected_items: List[str], target_dir: Path, git_root: Path) -> List[str]:
+    all_files = []
+    for item in selected_items:
+        item_path = Path(target_dir) / item
+        rel_path = item_path.resolve().relative_to(git_root.resolve())
+
+        if item_path.suffix:
+            all_files.append(str(rel_path))
+        else:
+            files = get_tracked_items(item_path, recursive=True)
+            for file in files:
+                if len(Path(file).parts) <= MAX_RECURSION_DEPTH + 1:
+                    all_files.append(file)
+    return all_files
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="A tool to combine content from multiple Git-tracked files in a single output stream.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                            # Interactive mode in current directory
+  %(prog)s /path/to/directory         # Interactive mode in specified directory
+  %(prog)s -p                         # Process all files in current directory
+  %(prog)s -p /path/to/directory      # Process all files in specified directory
+  %(prog)s -o output.txt              # Save output to file
+        """
+    )
+    parser.add_argument('directory', nargs='?', default='.',
+                       help='Target directory (default: current directory)')
+    parser.add_argument('-o', '--output',
+                       help='Output file path (default: print to stdout)')
+    parser.add_argument('-p', '--path', action='store_true',
+                       help='Process entire directory without interactive selection')
     return parser.parse_args()
 
 
 def main() -> None:
-    args = parse_args()
+    args = parse_arguments()
     target_dir = Path(args.directory)
-    output_file = args.output
 
     if not target_dir.exists():
         print(MSG_DIR_NOT_EXIST.format(target_dir))
         sys.exit(1)
 
-    output_stream = sys.stdout
-    if output_file:
-        try:
-            output_stream = open(output_file, "w", encoding=DEFAULT_ENCODING)
-        except Exception as e:
-            print(MSG_OUTPUT_FILE_ERROR.format(str(e)))
-            sys.exit(1)
+    items = get_tracked_items(target_dir)
+    if not items:
+        print(MSG_NO_TRACKED_FILES)
+        sys.exit(0)
 
-    try:
-        items = get_tracked_items(target_dir)
-        if not items:
-            print(MSG_NO_TRACKED_FILES)
-            sys.exit(0)
+    git_root = get_git_root()
+    directories, files = sort_items(items, git_root)
+    sorted_items = directories + files
 
-        directories, files = sort_items(items, target_dir)
-        sorted_items = directories + files
-
+    if args.path:
+        # Non-interactive mode: process all items
+        all_files = get_all_files(sorted_items, target_dir, git_root)
+        output = process_files(target_dir, all_files, git_root)
+    else:
+        # Interactive mode
         print(MSG_TRACKED_ITEMS_HEADER)
         for idx, item in enumerate(sorted_items, 1):
             prefix = f"{DIR_MARKER} " if item in directories else ""
@@ -168,37 +198,20 @@ def main() -> None:
                         print(MSG_INVALID_NUMBER.format(part))
                         break
                 else:
-                    git_root = get_git_root()
                     selected_items = [sorted_items[i] for i in numbers]
-
-                    all_files = []
-                    for item in selected_items:
-                        item_path = Path(target_dir) / item
-                        rel_path = item_path.resolve().relative_to(git_root.resolve())
-
-                        if not item_path.is_dir():
-                            all_files.append(str(rel_path))
-                        else:
-                            files = get_tracked_items(item_path, recursive=True)
-                            for file in files:
-                                if len(Path(file).parts) <= MAX_RECURSION_DEPTH + 1:
-                                    all_files.append(file)
-
-                    for file in all_files:
-                        write_output(f"{os.linesep}{FILE_BEGIN_MARKER.format(file)}{os.linesep}", output_stream)
-                        content = get_file_content(file, git_root)
-                        if content is not None:
-                            write_output(content, output_stream)
-                        write_output(f"{os.linesep}{FILE_END_MARKER}{os.linesep}{os.linesep}", output_stream)
+                    all_files = get_all_files(selected_items, target_dir, git_root)
+                    output = process_files(target_dir, all_files, git_root)
                     break
 
             except KeyboardInterrupt:
                 print(MSG_OPERATION_CANCELLED)
                 sys.exit(0)
 
-    finally:
-        if output_file and output_stream != sys.stdout:
-            output_stream.close()
+    if args.output:
+        with open(args.output, 'w', encoding=DEFAULT_ENCODING) as f:
+            f.write(output)
+    else:
+        print(output)
 
 
 if __name__ == "__main__":

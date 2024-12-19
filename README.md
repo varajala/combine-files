@@ -1,8 +1,8 @@
 # combine-files
 A command-line tool that helps you view and combine content from multiple Git-tracked files in a single output stream.
-Useful for picking the relevant files to the LLM of your choice.
+Useful for picking the relevant files to feed into an LLM or other text processing tools.
 
-## Usage
+## Basic Usage
 
 1. Run the script in the current directory:
 ```bash
@@ -12,16 +12,6 @@ python combine_files.py
 Or specify a target directory:
 ```bash
 python combine_files.py /path/to/directory
-```
-
-To write output to a file instead of stdout:
-```bash
-python combine_files.py -o output.txt
-```
-
-Or combine both:
-```bash
-python combine_files.py /path/to/directory -o output.txt
 ```
 
 2. The script will display a numbered list of Git-tracked items in the specified directory:
@@ -38,7 +28,7 @@ python combine_files.py /path/to/directory -o output.txt
    > 1,2,3
    ```
 
-4. The script will output the content of all selected files, or recursively files within a folder, with clear markers:
+4. The script will output the content of all selected files, or recursively process files within selected folders:
    ```
    // BEGIN FILE: src/main.py
    [file content here]
@@ -53,9 +43,51 @@ python combine_files.py /path/to/directory -o output.txt
    // END FILE
    ```
 
-The default recursion depth is 3.
+## Command Line Arguments
 
-If no output file is specified, the content will be printed to stdout. To capture this output to a text file, you can use the `-o` option:
 ```
+usage: combine_files.py [-h] [-o OUTPUT] [-p] [directory]
+
+A tool to combine content from multiple Git-tracked files in a single output stream.
+
+positional arguments:
+  directory             Target directory (default: current directory)
+
+options:
+  -h, --help           Show this help message and exit
+  -o, --output OUTPUT  Output file path (default: print to stdout)
+  -p, --path          Process entire directory without interactive selection
+
+```
+
+## Examples
+
+1. Interactive mode in current directory:
+```bash
+python combine_files.py
+```
+
+2. Interactive mode in specific directory:
+```bash
+python combine_files.py /path/to/directory
+```
+
+3. Non-interactive mode (process all files) in current directory:
+```bash
+python combine_files.py -p
+```
+
+4. Non-interactive mode in specific directory:
+```bash
+python combine_files.py -p /path/to/directory
+```
+
+5. Save output to file:
+```bash
 python combine_files.py -o output.txt
+```
+
+6. Combine non-interactive mode with file output:
+```bash
+python combine_files.py -p -o output.txt
 ```
