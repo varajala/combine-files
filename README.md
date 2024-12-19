@@ -91,3 +91,41 @@ python combine_files.py -o output.txt
 ```bash
 python combine_files.py -p -o output.txt
 ```
+
+## Development
+
+1. Create and activate a virtual environment:
+
+```bash
+# Windows
+python -m venv venv
+venv\Scripts\activate
+
+# Unix/MacOS
+python3 -m venv venv
+source venv/bin/activate
+```
+
+2. Install development dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+3. Run the test suite located in `tests`-folder with `pytest`:
+
+```bash
+# Run all tests
+pytest
+
+# Run with verbose output
+pytest -v
+
+# Run specific test file
+pytest tests/test_combine_files.py
+
+# Run with coverage report
+pytest --cov=combine_files tests/
+```
+
+Note: All tests create temporary Git repositories and clean them up after running. Make sure you have Git installed and accessible from the command line.
