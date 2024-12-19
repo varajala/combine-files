@@ -74,15 +74,20 @@ def get_tracked_items(directory: Path, recursive: bool = False) -> List[str]:
     return sorted(list(set(directory_items)))
 
 
-def sort_items(items: List[str]) -> Tuple[List[str], List[str]]:
+def sort_items(items: List[str], base_dir: Path) -> Tuple[List[str], List[str]]:
+    """
+    Sort items into directories and files by checking if they exist as directories
+    in the filesystem relative to the base directory.
+    """
     directories = []
     files = []
 
     for item in items:
-        if Path(item).suffix:
-            files.append(item)
-        else:
+        item_path = base_dir / item
+        if item_path.is_dir():
             directories.append(item)
+        else:
+            files.append(item)
 
     return sorted(directories), sorted(files)
 
@@ -136,7 +141,7 @@ def main() -> None:
             print(MSG_NO_TRACKED_FILES)
             sys.exit(0)
 
-        directories, files = sort_items(items)
+        directories, files = sort_items(items, target_dir)
         sorted_items = directories + files
 
         print(MSG_TRACKED_ITEMS_HEADER)
@@ -171,7 +176,7 @@ def main() -> None:
                         item_path = Path(target_dir) / item
                         rel_path = item_path.resolve().relative_to(git_root.resolve())
 
-                        if item_path.suffix:
+                        if not item_path.is_dir():
                             all_files.append(str(rel_path))
                         else:
                             files = get_tracked_items(item_path, recursive=True)
