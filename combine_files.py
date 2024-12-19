@@ -1,27 +1,3 @@
-"""
-MIT License
-
-Copyright (c) 2024 Valtteri Rajalainen
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-"""
-
 import os
 import sys
 import subprocess
@@ -97,15 +73,20 @@ def get_tracked_items(directory: Path, recursive: bool = False) -> List[str]:
     return sorted(list(set(directory_items)))
 
 
-def sort_items(items: List[str]) -> Tuple[List[str], List[str]]:
+def sort_items(items: List[str], base_dir: Path) -> Tuple[List[str], List[str]]:
+    """
+    Sort items into directories and files by checking if they exist as directories
+    in the filesystem relative to the base directory.
+    """
     directories = []
     files = []
 
     for item in items:
-        if Path(item).suffix:
-            files.append(item)
-        else:
+        item_path = base_dir / item
+        if item_path.is_dir():
             directories.append(item)
+        else:
+            files.append(item)
 
     return sorted(directories), sorted(files)
 
@@ -184,7 +165,7 @@ def main() -> None:
         sys.exit(0)
 
     git_root = get_git_root()
-    directories, files = sort_items(items)
+    directories, files = sort_items(items, git_root)
     sorted_items = directories + files
 
     if args.path:
