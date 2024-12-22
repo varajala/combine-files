@@ -325,7 +325,6 @@ def test_get_tracked_items_recursive_deep_structure(tmp_path: Path) -> None:
     subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path)
 
-    # Create a deeper structure
     files = {
         "dir1/file1.txt": "content1",
         "dir1/subdir1/file2.txt": "content2",
@@ -359,10 +358,11 @@ def test_get_tracked_items_recursive_deep_structure(tmp_path: Path) -> None:
 
         # Test recursive listing from subdirectory
         items = combine_files.get_tracked_items(repo_path / "dir1", recursive=True)
+        # Now expect full paths even when listing from subdirectory
         expected = sorted([
-            "file1.txt",
-            "subdir1/file2.txt",
-            "subdir1/file3.txt"
+            "dir1/file1.txt",
+            "dir1/subdir1/file2.txt",
+            "dir1/subdir1/file3.txt"
         ])
         assert sorted(items) == expected
 
