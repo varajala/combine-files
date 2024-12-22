@@ -38,12 +38,12 @@ def get_git_root() -> Path:
 
 def get_tracked_items(directory: Path, recursive: bool = False) -> List[str]:
     git_root = get_git_root()
-
     abs_directory = directory.resolve()
 
     try:
         rel_directory = abs_directory.relative_to(git_root)
-        prefix = str(rel_directory) + "/" if str(rel_directory) != "." else ""
+        # Normalize to forward slashes for git paths
+        prefix = str(rel_directory).replace('\\', '/') + "/" if str(rel_directory) != "." else ""
     except ValueError:
         print(MSG_DIR_NOT_EXIST.format(directory))
         sys.exit(1)
@@ -54,23 +54,56 @@ def get_tracked_items(directory: Path, recursive: bool = False) -> List[str]:
     if not output:
         return []
 
-    items = output.split("\n")
+    # Split and normalize all paths to use forward slashes
+    items = [item.replace('\\', '/') for item in output.split("\n")]
     directory_items = []
 
     for item in items:
-        if not item.startswith(prefix):
+        # Skip items that don't start with the prefix
+        if prefix and not item.startswith(prefix):
             continue
 
+        # Get the relative path by removing the prefix
         relative_item = item[len(prefix):] if prefix else item
 
         if not recursive:
+            # For non-recursive mode, only include top-level items
             parts = Path(relative_item).parts
             if parts:
-                directory_items.append(parts[0])
+                # Normalize to forward slashes for consistency
+                top_level = str(parts[0]).replace('\\', '/')
+                directory_items.append(top_level)
         else:
-            directory_items.append(item)
+            # For recursive mode, include the full relative path with correct structure
+            directory_items.append(item)  # Use the full git path instead of relative_item
 
-    return sorted(list(set(directory_items)))
+    # Remove duplicates while preserving order
+    seen = set()
+    return [x for x in directory_items if not (x in seen or seen.add(x))]
+
+
+def process_files(target_dir: Path, all_files: List[str], git_root: Path) -> str:
+    output = []
+    for file in all_files:
+        # Ensure we use the full path relative to git root
+        file_path = Path(file)  # Use the full path as provided by git ls-files
+        output.append(f"{os.linesep}{FILE_BEGIN_MARKER.format(file)}")
+        content = get_file_content(file_path, git_root)
+        if content is not None:
+            output.append(content)
+        output.append(f"{FILE_END_MARKER}{os.linesep}{os.linesep}")
+    return "\n".join(output)
+
+
+def get_file_content(file_path: Path, git_root: Path) -> Optional[str]:
+    try:
+        full_path = git_root / file_path
+        if full_path.is_file():
+            with open(full_path, "r", encoding=DEFAULT_ENCODING) as f:
+                return f.read()
+    except Exception as e:
+        return MSG_FILE_READ_ERROR.format(str(e))
+    return None
 
 
 def sort_items(items: List[str], base_dir: Path) -> Tuple[List[str], List[str]]:
@@ -100,17 +133,6 @@ def get_file_content(file_path: Path, git_root: Path) -> Optional[str]:
     except Exception as e:
         return MSG_FILE_READ_ERROR.format(str(e))
     return None
-
-
-def process_files(target_dir: Path, all_files: List[str], git_root: Path) -> str:
-    output = []
-    for file in all_files:
-        output.append(f"{os.linesep}{FILE_BEGIN_MARKER.format(file)}")
-        content = get_file_content(file, git_root)
-        if content is not None:
-            output.append(content)
-        output.append(f"{FILE_END_MARKER}{os.linesep}{os.linesep}")
-    return "\n".join(output)
 
 
 def get_all_files(selected_items: List[str], target_dir: Path, git_root: Path) -> List[str]:

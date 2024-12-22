@@ -316,3 +316,55 @@ def test_mixed_newlines(special_chars_repo: Path) -> None:
         assert "line2" in normalized_output
         assert "line3" in normalized_output
 
+def test_get_tracked_items_recursive_deep_structure(tmp_path: Path) -> None:
+    """Test getting tracked items recursively with a deeper directory structure."""
+    # Create a new git repo just for this test
+    repo_path = tmp_path / "deep_structure_repo"
+    repo_path.mkdir()
+    subprocess.run(["git", "init"], cwd=repo_path)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path)
+
+    files = {
+        "dir1/file1.txt": "content1",
+        "dir1/subdir1/file2.txt": "content2",
+        "dir1/subdir1/file3.txt": "content3",
+        "dir2/file4.txt": "content4",
+        "dir2/subdir2/file5.txt": "content5"
+    }
+
+    for file_path, content in files.items():
+        full_path = repo_path / file_path
+        full_path.parent.mkdir(exist_ok=True, parents=True)
+        full_path.write_text(content)
+        subprocess.run(["git", "add", file_path], cwd=repo_path)
+
+    subprocess.run(["git", "commit", "-m", "Add deep structure"], cwd=repo_path)
+
+    original_dir = os.getcwd()
+    try:
+        os.chdir(repo_path)
+
+        # Test recursive listing from root
+        items = combine_files.get_tracked_items(repo_path, recursive=True)
+        expected = sorted([
+            "dir1/file1.txt",
+            "dir1/subdir1/file2.txt",
+            "dir1/subdir1/file3.txt",
+            "dir2/file4.txt",
+            "dir2/subdir2/file5.txt"
+        ])
+        assert sorted(items) == expected
+
+        # Test recursive listing from subdirectory
+        items = combine_files.get_tracked_items(repo_path / "dir1", recursive=True)
+        # Now expect full paths even when listing from subdirectory
+        expected = sorted([
+            "dir1/file1.txt",
+            "dir1/subdir1/file2.txt",
+            "dir1/subdir1/file3.txt"
+        ])
+        assert sorted(items) == expected
+
+    finally:
+        os.chdir(original_dir)
