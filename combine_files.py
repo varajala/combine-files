@@ -73,6 +73,43 @@ def get_git_root() -> Optional[Path]:
     return None
 
 
+def remove_path_prefix(path: str, prefix: str) -> str:
+    """
+    Remove the specified path prefix if present.
+
+    Args:
+        path: The original file path.
+        prefix: The prefix to be removed.
+
+    Returns:
+        The relative path without the prefix.
+    """
+    return path[len(prefix):] if prefix else path
+
+
+def try_parse_number(input: str, min_value: int, max_value: int) -> Tuple[bool, int]:
+    """
+    Try parsing a number in the range [min_value, max_value].
+
+    Args:
+        input: The string to be parsed.
+        min_value: The minimum allowed value for the integer.
+        max_value: The maximum allowed value for the integer.
+
+    Returns:
+        A tuple of (success, result) where:
+        - success is True if the operation was successful, False otherwise.
+        - result is the parsed number.
+    """
+    try:
+        num = int(input)
+        if num >= min_value and num <= max_value:
+            return True, num
+        return False, 0
+    except ValueError:
+        return False, 0
+
+
 def get_tracked_paths(directory: Path, recursive: bool = False) -> GitCommandResult:
     """
     Get list of Git-tracked paths in specified directory.
@@ -107,13 +144,16 @@ def get_tracked_paths(directory: Path, recursive: bool = False) -> GitCommandRes
     filtered_paths = []
 
     for path in tracked_paths:
-        if not git_prefix or path.startswith(git_prefix):
-            relative_path = path[len(git_prefix):] if git_prefix else path
-            if not recursive:
-                top_level = Path(relative_path).parts[0]
-                filtered_paths.append(normalize_git_path(top_level))
-            else:
-                filtered_paths.append(path)
+        if git_prefix and not path.startswith(git_prefix):
+            continue
+
+        relative_path = remove_path_prefix(path, git_prefix)
+        if recursive:
+            filtered_paths.append(path)
+            continue
+
+        top_level = Path(relative_path).parts[0]
+        filtered_paths.append(normalize_git_path(top_level))
 
     # Remove duplicates while preserving order
     unique_paths = list(dict.fromkeys(filtered_paths))
@@ -131,7 +171,7 @@ def read_file_content(file_path: Path, git_root: Path) -> ProcessingResult:
     Returns:
         Tuple of (success, content) where content is file content or error message
     """
-    full_path = git_root / file_path
+    full_path = git_root.joinpath(file_path)
     if not full_path.is_file():
         return False, f"File not found: {file_path}"
 
@@ -158,7 +198,8 @@ def partition_by_file_type(paths: List[str], base_dir: Path) -> Tuple[List[str],
     files = []
 
     for path in paths:
-        if (base_dir / path).is_dir():
+        full_path = base_dir.joinpath(path)
+        if full_path.is_dir():
             directories.append(path)
         else:
             files.append(path)
@@ -181,20 +222,22 @@ def collect_all_files(selected_paths: List[str], target_dir: Path, git_root: Pat
     all_files = []
 
     for path in selected_paths:
-        item_path = Path(target_dir) / path
-        rel_path = item_path.resolve().relative_to(git_root.resolve())
+        item_path = Path(target_dir).joinpath(path)
+        relative_path = item_path.resolve().relative_to(git_root.resolve())
 
         if item_path.suffix:
-            all_files.append(normalize_git_path(rel_path))
+            all_files.append(normalize_git_path(relative_path))
             continue
 
         success, files = get_tracked_paths(item_path, recursive=True)
-        if success and isinstance(files, list):
-            shallow_files = [
-                f for f in files
-                if len(Path(f).parts) <= CONFIG['max_recursion_depth'] + 1
-            ]
-            all_files.extend(shallow_files)
+        if not success or not isinstance(files, list):
+            return
+
+        max_depth = CONFIG['max_recursion_depth'] + 1
+        for file in files:
+            file_path = Path(file)
+            if len(file_path.parts) <= max_depth:
+                all_files.append(file)
 
     return all_files
 
@@ -239,15 +282,12 @@ def parse_selection(input_str: str, max_value: int) -> Tuple[bool, Union[List[in
         return False, MESSAGES['empty_input']
 
     indices = []
-    for part in input_str.replace(",", " ").replace(";", " ").split():
-        try:
-            num = int(part)
-            if 1 <= num <= max_value:
-                indices.append(num - 1)
-            else:
-                return False, MESSAGES['invalid_number'].format(part)
-        except ValueError:
+    parts = input_str.replace(",", " ").replace(";", " ").split()
+    for part in parts:
+        success, number = try_parse_number(part, 1, max_value)
+        if not success:
             return False, MESSAGES['invalid_number'].format(part)
+        indices.append(number - 1)
 
     return True, indices
 
@@ -288,8 +328,70 @@ def write_output(content: str, output_path: Optional[str] = None) -> None:
         file.write(content)
 
 
+def handle_non_interactive_mode(directories: List[str], files: List[str], target_dir: Path, git_root: Path, args: argparse.Namespace) -> None:
+    """
+    Handles the non-interactive mode of the application.
+
+    Args:
+        directories: List of sorted directories.
+        files: List of sorted files.
+        target_dir: The target directory for file collection.
+        git_root: The root of the git repository.
+        args: The parsed command-line arguments.
+    """
+    sorted_paths = directories + files
+    all_files = collect_all_files(sorted_paths, target_dir, git_root)
+    success, output = format_file_contents(all_files, git_root)
+    if success:
+        write_output(output, args.output)
+        return
+
+    print(output)
+    sys.exit(1)
+
+
+def handle_interactive_mode(directories: List[str], files: List[str], target_dir: Path, git_root: Path, args: argparse.Namespace) -> None:
+    """
+    Handles the interactive mode of the application.
+
+    Args:
+        directories: List of sorted directories.
+        files: List of sorted files.
+        target_dir: The target directory for file collection.
+        git_root: The root of the git repository.
+        args: The parsed command-line arguments.
+    """
+    sorted_paths = directories + files
+    print(MESSAGES['tracked_items_header'])
+    for idx, path in enumerate(sorted_paths, 1):
+        prefix = f"{CONFIG['dir_marker']} " if path in directories else ""
+        print(f"{idx}. {prefix}{path}")
+
+    while True:
+        try:
+            selection = input(MESSAGES['input_prompt'])
+            success, result = parse_selection(selection, len(sorted_paths))
+
+            if not success:
+                print(result)
+                continue
+
+            selected_paths = [sorted_paths[i] for i in result]
+            all_files = collect_all_files(selected_paths, target_dir, git_root)
+            success, output = format_file_contents(all_files, git_root)
+            if success:
+                write_output(output, args.output)
+                break
+
+            print(output)
+            sys.exit(1)
+
+        except KeyboardInterrupt:
+            print(MESSAGES['operation_cancelled'])
+            sys.exit(0)
+
+
 def main() -> None:
-    """Main program entry point."""
     args = create_arg_parser().parse_args()
     target_dir = Path(args.directory)
 
@@ -312,45 +414,10 @@ def main() -> None:
         sys.exit(0)
 
     directories, files = partition_by_file_type(tracked_paths, git_root)
-    sorted_paths = directories + files
-
     if args.path:
-        # Non-interactive mode
-        all_files = collect_all_files(sorted_paths, target_dir, git_root)
-        success, output = format_file_contents(all_files, git_root)
-        if success:
-            write_output(output, args.output)
-        else:
-            print(output)
-            sys.exit(1)
+        handle_non_interactive_mode(directories, files, target_dir, git_root, args)
     else:
-        # Interactive mode
-        print(MESSAGES['tracked_items_header'])
-        for idx, path in enumerate(sorted_paths, 1):
-            prefix = f"{CONFIG['dir_marker']} " if path in directories else ""
-            print(f"{idx}. {prefix}{path}")
-
-        while True:
-            try:
-                selection = input(MESSAGES['input_prompt'])
-                success, result = parse_selection(selection, len(sorted_paths))
-
-                if success:
-                    selected_paths = [sorted_paths[i] for i in result]
-                    all_files = collect_all_files(selected_paths, target_dir, git_root)
-                    success, output = format_file_contents(all_files, git_root)
-                    if success:
-                        write_output(output, args.output)
-                        break
-                    else:
-                        print(output)
-                        sys.exit(1)
-                else:
-                    print(result)
-
-            except KeyboardInterrupt:
-                print(MESSAGES['operation_cancelled'])
-                sys.exit(0)
+        handle_interactive_mode(directories, files, target_dir, git_root, args)
 
 
 if __name__ == "__main__":
