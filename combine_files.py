@@ -38,7 +38,6 @@ def get_git_root() -> Path:
 
 def get_tracked_items(directory: Path, recursive: bool = False) -> List[str]:
     git_root = get_git_root()
-
     abs_directory = directory.resolve()
 
     try:
@@ -68,9 +67,10 @@ def get_tracked_items(directory: Path, recursive: bool = False) -> List[str]:
             if parts:
                 directory_items.append(parts[0])
         else:
-            directory_items.append(item)
+            directory_items.append(relative_item)
 
-    return sorted(list(set(directory_items)))
+    seen = set()
+    return [x for x in directory_items if not (x in seen or seen.add(x))]
 
 
 def sort_items(items: List[str], base_dir: Path) -> Tuple[List[str], List[str]]:
