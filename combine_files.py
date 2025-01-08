@@ -222,24 +222,21 @@ def collect_all_files(selected_paths: List[str], target_dir: Path, git_root: Pat
     all_files = []
 
     for path in selected_paths:
-        item_path = Path(target_dir).joinpath(path)
-        relative_path = item_path.resolve().relative_to(git_root.resolve())
+        full_path = Path(target_dir).joinpath(path)
 
-        if item_path.suffix:
+        if not full_path.is_dir():
+            relative_path = full_path.resolve().relative_to(git_root.resolve())
             all_files.append(normalize_git_path(relative_path))
             continue
 
-        success, files = get_tracked_paths(item_path, recursive=True)
+        # Recurse into directories
+        success, files = get_tracked_paths(full_path, recursive=True)
         if not success or not isinstance(files, list):
-            return
+            continue
 
-        max_depth = CONFIG['max_recursion_depth'] + 1
-        for file in files:
-            file_path = Path(file)
-            if len(file_path.parts) <= max_depth:
-                all_files.append(file)
+        all_files.extend(files)
 
-    return all_files
+    return sorted(set(all_files))
 
 
 def format_file_contents(file_paths: List[str], git_root: Path) -> ProcessingResult:
