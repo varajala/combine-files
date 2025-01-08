@@ -226,3 +226,48 @@ def test_noninteractive_mode(git_repo: Path) -> None:
         assert "// BEGIN FILE:" in content
         assert "// END FILE" in content
         assert "# Test Project" in content
+
+
+def test_collect_all_files_dotted_dirs(git_repo: Path) -> None:
+    """Test collecting files from directories containing dots in their names."""
+    # Create test files in Language.Tests directory
+    lang_tests = git_repo / "Language.Tests"
+    lang_tests.mkdir()
+    test_files = [
+        "ExpressionParsingTests.cs",
+        "ScanningTests.cs",
+        "StatementParsingTests.cs"
+    ]
+    for file in test_files:
+        (lang_tests / file).write_text("test content")
+
+    # Add regular top-level file
+    (git_repo / "README.md").write_text("readme content")
+
+    # Add and commit all files
+    subprocess.run(["git", "add", "."], cwd=git_repo)
+    subprocess.run(["git", "commit", "-m", "Add test files"], cwd=git_repo)
+
+    # Verify git tracking works correctly first
+    success, paths = combine_files.get_tracked_paths(git_repo)
+    assert success
+    assert "Language.Tests" in paths
+
+    # Now test collect_all_files
+    collected = combine_files.collect_all_files(["Language.Tests", "README.md"], git_repo, git_repo)
+
+    # Verify all test files were collected
+    expected_paths = {
+        "Language.Tests/ExpressionParsingTests.cs",
+        "Language.Tests/ScanningTests.cs",
+        "Language.Tests/StatementParsingTests.cs",
+        "README.md"
+    }
+    actual_paths = set(collected)
+
+    print(f"\nExpected paths: {sorted(expected_paths)}")
+    print(f"Actual paths: {sorted(actual_paths)}")
+
+    # Test that all expected files are present
+    assert actual_paths == expected_paths, \
+        "Not all files from Language.Tests directory were collected"
